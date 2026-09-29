@@ -194,24 +194,29 @@ func FuzzTableVsLinear(f *testing.F) {
 }
 
 // Near-full pool: a single free slot far behind the cursor must be found
-// without walking the whole pool.
+// without walking the pool. Compare a /24 with a 1024x larger /14: an O(n)
+// scan would slow down ~1000x, an O(log n) one barely at all. A ratio is
+// used instead of an absolute time so slow CI runners (-race) don't flake.
 func TestAllocatorNearFullFast(t *testing.T) {
-	al, _ := NewAllocator(P("10.0.0.0/16"))
-	for {
-		if _, err := al.Allocate(); err != nil {
-			break
-		}
-	}
-	hole := A("10.0.0.1")
-	res := testing.Benchmark(func(b *testing.B) {
-		for b.Loop() {
-			al.Release(hole)
-			if a, err := al.Allocate(); err != nil || a != hole {
-				b.Fatal(a, err)
+	cost := func(p netip.Prefix) float64 {
+		al, _ := NewAllocator(p)
+		for {
+			if _, err := al.Allocate(); err != nil {
+				break
 			}
 		}
-	})
-	if ns := res.NsPerOp(); ns > 20000 {
-		t.Errorf("Allocate on near-full /16: %d ns/op, want O(log n)", ns)
+		hole := First(p).Next()
+		return float64(testing.Benchmark(func(b *testing.B) {
+			for b.Loop() {
+				al.Release(hole)
+				if a, err := al.Allocate(); err != nil || a != hole {
+					b.Fatal(a, err)
+				}
+			}
+		}).NsPerOp())
+	}
+	small, large := cost(P("10.0.0.0/24")), cost(P("10.0.0.0/14"))
+	if ratio := large / small; ratio > 50 {
+		t.Errorf("near-full scan scales with pool size: /24 %.0fns, /14 %.0fns (x%.0f)", small, large, ratio)
 	}
 }
