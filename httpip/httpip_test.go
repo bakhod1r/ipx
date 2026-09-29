@@ -33,6 +33,7 @@ func TestClientIP(t *testing.T) {
 		{"garbage in chain stops walk", "10.0.0.2:80", map[string]string{"X-Forwarded-For": "1.1.1.1, junk"}, "10.0.0.2"},
 		{"x-real-ip from trusted", "10.0.0.2:80", map[string]string{"X-Real-IP": "198.51.100.8"}, "198.51.100.8"},
 		{"mapped peer normalized", "[::ffff:10.0.0.2]:80", map[string]string{"X-Forwarded-For": "[2001:db8::1]:443"}, "2001:db8::1"},
+		{"bad x-real-ip ignored", "10.0.0.2:80", map[string]string{"X-Real-IP": "nope"}, "10.0.0.2"},
 		{"ipv6 remote", "[2001:db8::5]:80", nil, "2001:db8::5"},
 	}
 	for _, c := range cases {

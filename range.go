@@ -221,14 +221,8 @@ func appendRangePrefixes(dst []netip.Prefix, r Range) []netip.Prefix {
 	is4, w := r.from.Is4(), r.from.BitLen()
 	cur, end := toU128(r.from), toU128(r.to)
 	for {
-		bits := w
-		for b := 0; b <= w; b++ {
-			hm := hostMask(b, w)
-			if cur.and(hm).isZero() && cur.or(hm).cmp(end) <= 0 {
-				bits = b
-				break
-			}
-		}
+		// Largest aligned block at cur that ends at or before end.
+		bits := w - min(cur.trailingZeros(w), end.sub1(cur).log2Count())
 		dst = append(dst, netip.PrefixFrom(fromU128(cur, is4), bits))
 		last := cur.or(hostMask(bits, w))
 		if last.cmp(end) >= 0 {

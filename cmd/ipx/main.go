@@ -27,7 +27,9 @@ const usage = `usage: ipx [--json] <command> [args]
   alloc     <prefix> <n> [--reserve ip]...  first n free host addresses
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout)) }
+var exit = os.Exit
+
+func main() { exit(run(os.Args[1:], os.Stdout)) }
 
 // run executes a command; exit codes: 0 ok, 1 negative answer, 2 error.
 func run(args []string, w io.Writer) int {
@@ -226,10 +228,7 @@ func alloc(args []string) (any, int, error) {
 	if err != nil || n < 1 || n > 65536 {
 		return nil, 2, fmt.Errorf("count must be 1-65536, got %q", args[1])
 	}
-	al, err := ipx.NewAllocator(p)
-	if err != nil {
-		return nil, 2, err
-	}
+	al, _ := ipx.NewAllocator(p) // only fails for an invalid prefix, parsed above
 	rest := args[2:]
 	for len(rest) > 0 {
 		if rest[0] != "--reserve" || len(rest) < 2 {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -60,5 +62,51 @@ func TestRunV3(t *testing.T) {
 		if code != c.code || !strings.Contains(out.String(), c.want) {
 			t.Errorf("%v: code %d out %q", c.args, code, out.String())
 		}
+	}
+}
+
+func TestRunErrors(t *testing.T) {
+	bad := [][]string{
+		{"parse"}, {"cidr"}, {"cidr", "x"}, {"contains", "x"}, {"contains", "x", "1.1.1.1"},
+		{"contains", "10.0.0.0/8", "x"}, {"split", "x"}, {"split", "x", "1"}, {"split", "10.0.0.0/8", "x"},
+		{"aggregate"}, {"aggregate", "x"}, {"range"}, {"range", "x"},
+		{"plan", "x"}, {"plan", "x", "24"}, {"plan", "10.0.0.0/8", "hosts:x"},
+		{"plan", "10.0.0.0/8", "hosts:99999999999"}, {"plan", "10.0.0.0/8", "x"},
+		{"alloc", "x"}, {"alloc", "x", "1"}, {"alloc", "10.0.0.0/8", "0"}, {"alloc", "10.0.0.0/8", "1", "--oops"},
+		{"alloc", "10.0.0.0/8", "1", "--reserve", "x"}, {"alloc", "10.0.0.0/8", "1", "--reserve", "11.0.0.1"},
+	}
+	for _, args := range bad {
+		var out bytes.Buffer
+		if code := run(args, &out); code != 2 || !strings.Contains(out.String(), "error") {
+			t.Errorf("%v: code %d out %q", args, code, out.String())
+		}
+	}
+	// hosts:N on an IPv6 parent uses IPv6 sizing.
+	var out bytes.Buffer
+	if run([]string{"plan", "2001:db8::/64", "hosts:256"}, &out) != 0 || out.String() != "2001:db8::/120\n" {
+		t.Error(out.String())
+	}
+}
+
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestJSONWriteError(t *testing.T) {
+	if code := run([]string{"--json", "parse", "1.1.1.1"}, failWriter{}); code != 2 {
+		t.Error(code)
+	}
+}
+
+func TestMain_(t *testing.T) {
+	var got int
+	exit = func(c int) { got = c }
+	defer func() { exit = os.Exit }()
+	old := os.Args
+	defer func() { os.Args = old }()
+	os.Args = []string{"ipx", "parse", "1.1.1.1"}
+	main()
+	if got != 0 {
+		t.Error(got)
 	}
 }

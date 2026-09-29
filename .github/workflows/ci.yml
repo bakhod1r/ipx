@@ -19,6 +19,11 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race -coverprofile=cover.out ./...
+      - name: coverage must stay 100%
+        run: |
+          total=$(go tool cover -func=cover.out | awk '/^total:/ {print $3}')
+          echo "coverage: $total"
+          [ "$total" = "100.0%" ]
       - name: fuzz (short)
         run: |
           for f in FuzzRangePrefixes FuzzParseNoPanic FuzzSetAlgebra FuzzTableVsLinear; do

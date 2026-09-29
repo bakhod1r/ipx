@@ -277,10 +277,7 @@ func Hosts(p netip.Prefix) iter.Seq[netip.Addr] {
 	if !p.IsValid() {
 		return func(func(netip.Addr) bool) {}
 	}
-	f, l := usableBounds(p)
-	if f.Compare(l) > 0 {
-		return func(func(netip.Addr) bool) {}
-	}
+	f, l := usableBounds(p) // always f ≤ l
 	return Range{f, l}.All()
 }
 

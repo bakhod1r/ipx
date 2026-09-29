@@ -301,3 +301,19 @@ func (s *SyncTable[V]) Snapshot() map[netip.Prefix]V {
 	}
 	return m
 }
+
+// LookupResult is one answer of LookupBatch.
+type LookupResult[V any] struct {
+	Prefix netip.Prefix
+	Value  V
+	OK     bool
+}
+
+// LookupBatch runs Lookup for each address, in order.
+func (t *Table[V]) LookupBatch(as []netip.Addr) []LookupResult[V] {
+	out := make([]LookupResult[V], len(as))
+	for i, a := range as {
+		out[i].Prefix, out[i].Value, out[i].OK = t.Lookup(a)
+	}
+	return out
+}

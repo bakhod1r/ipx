@@ -60,10 +60,35 @@ func (u u128) cmp(v u128) int {
 	return 0
 }
 
+// trailingZeros counts trailing zero bits, capped at width.
+func (u u128) trailingZeros(width int) int {
+	if u.lo != 0 {
+		return min(bits.TrailingZeros64(u.lo), width)
+	}
+	if u.hi != 0 {
+		return min(64+bits.TrailingZeros64(u.hi), width)
+	}
+	return width
+}
+
+// sub1 returns u-v (caller guarantees u ≥ v).
+func (u u128) sub1(v u128) u128 { d, _ := u.sub(v); return d }
+
+// log2Count returns floor(log2(u+1)): the largest k with 2^k ≤ u+1.
+func (u u128) log2Count() int {
+	n, c := u.add(u128{0, 1})
+	if c {
+		return 128
+	}
+	if n.hi != 0 {
+		return 127 - bits.LeadingZeros64(n.hi)
+	}
+	return 63 - bits.LeadingZeros64(n.lo)
+}
+
 func (u u128) and(v u128) u128 { return u128{u.hi & v.hi, u.lo & v.lo} }
 func (u u128) or(v u128) u128  { return u128{u.hi | v.hi, u.lo | v.lo} }
 func (u u128) not() u128       { return u128{^u.hi, ^u.lo} }
-func (u u128) isZero() bool    { return u.hi == 0 && u.lo == 0 }
 
 // bit returns bit i counted from the most significant bit of a width-bit number.
 func (u u128) bit(i, width int) uint {

@@ -154,10 +154,12 @@ func (s *IPSet) Size() *big.Int {
 
 // Contains reports whether a is in the set. O(log n).
 func (s *IPSet) Contains(a netip.Addr) bool {
-	a = Normalize(a)
+	if a.Is4In6() || a.Zone() != "" {
+		a = Normalize(a)
+	}
 	rs := s.ranges()
 	i := s.index(a)
-	return i < len(rs) && rs[i].Contains(a)
+	return i < len(rs) && a.IsValid() && !a.Less(rs[i].from) && rs[i].from.Is4() == a.Is4()
 }
 
 // ContainsPrefix reports whether all of p is in the set.
@@ -175,16 +177,18 @@ func (s *IPSet) ContainsRange(r Range) bool {
 
 // index returns the position of the range containing a, or where it would be.
 func (s *IPSet) index(a netip.Addr) int {
-	i, _ := slices.BinarySearchFunc(s.ranges(), a, func(r Range, a netip.Addr) int {
-		if r.to.Compare(a) < 0 {
-			return -1
+	rs := s.ranges()
+	// First range whose end is ≥ a; one comparison per step.
+	lo, hi := 0, len(rs)
+	for lo < hi {
+		m := int(uint(lo+hi) >> 1)
+		if rs[m].to.Less(a) {
+			lo = m + 1
+		} else {
+			hi = m
 		}
-		if r.from.Compare(a) > 0 {
-			return 1
-		}
-		return 0
-	})
-	return i
+	}
+	return lo
 }
 
 // MarshalText encodes the set as its comma-separated prefix list.
@@ -303,4 +307,13 @@ func IntersectPrefix(a, b netip.Prefix) (netip.Prefix, bool) {
 		return a.Masked(), true
 	}
 	return netip.Prefix{}, false
+}
+
+// ContainsBatch reports membership for each address, in order.
+func (s *IPSet) ContainsBatch(as []netip.Addr) []bool {
+	out := make([]bool, len(as))
+	for i, a := range as {
+		out[i] = s.Contains(a)
+	}
+	return out
 }

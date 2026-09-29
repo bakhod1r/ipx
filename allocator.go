@@ -31,12 +31,8 @@ func NewAllocator(p netip.Prefix, exclude ...netip.Prefix) (*Allocator, error) {
 		return nil, ErrInvalidPrefix
 	}
 	p = NormalizePrefix(p)
-	f, l := usableBounds(p)
-	r, err := NewRange(f, l)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s has no usable hosts", ErrExhausted, p)
-	}
-	return NewRangeAllocator(r, exclude...)
+	f, l := usableBounds(p) // always f ≤ l: /31 and /32 keep every address
+	return NewRangeAllocator(Range{f, l}, exclude...)
 }
 
 // NewRangeAllocator creates a pool over r.
@@ -96,10 +92,7 @@ func (al *Allocator) markTaken(a netip.Addr) {
 
 // unmarkTaken removes a from taken, splitting its range.
 func (al *Allocator) unmarkTaken(a netip.Addr) {
-	i := al.takenIndex(a)
-	if i < 0 {
-		return
-	}
+	i := al.takenIndex(a) // callers only unmark addresses they marked
 	parts := al.taken[i].Subtract(Range{a, a})
 	al.taken = slices.Replace(al.taken, i, i+1, parts...)
 }
@@ -171,10 +164,7 @@ func (al *Allocator) AllocateRandom() (netip.Addr, error) {
 	al.mu.Lock()
 	defer al.mu.Unlock()
 	size := al.pool.Size()
-	off, err := rand.Int(rand.Reader, size)
-	if err != nil {
-		return netip.Addr{}, err
-	}
+	off, _ := rand.Int(rand.Reader, size) // crypto/rand.Reader never fails (Go ≥1.24)
 	start, _ := AddBig(al.pool.from, off)
 	a, err := al.scan(start, 1)
 	if err != nil {
@@ -187,9 +177,6 @@ func (al *Allocator) AllocateRandom() (netip.Addr, error) {
 // scan finds the first free address from start in dir (±1), wrapping once.
 // O(log n) in the number of taken runs. Caller holds mu.
 func (al *Allocator) scan(start netip.Addr, dir int) (netip.Addr, error) {
-	if al.available.Sign() == 0 {
-		return netip.Addr{}, ErrExhausted
-	}
 	a := start
 	for range 2 { // at most one wrap
 		i := al.takenIndex(a)

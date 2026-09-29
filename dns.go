@@ -95,10 +95,7 @@ func ReverseZones(p netip.Prefix) ([]string, error) {
 		step = 8
 	}
 	bits := (p.Bits() + step - 1) / step * step
-	subs, err := SplitN(p, bits, 0)
-	if err != nil {
-		return nil, err
-	}
+	subs, _ := SplitN(p, bits, 0) // bits is within [p.Bits(), width] by construction
 	out := make([]string, 0, len(subs))
 	for _, s := range subs {
 		full, _ := ReverseName(s.Addr())
@@ -107,6 +104,40 @@ func ReverseZones(p netip.Prefix) ([]string, error) {
 		addrLabels := p.Addr().BitLen() / step
 		drop := addrLabels - bits/step
 		out = append(out, strings.Join(labels[drop:], ".")+".")
+	}
+	return out, nil
+}
+
+// CNAME is one RFC 2317 delegation record: Name → Target.
+type CNAME struct {
+	Name, Target string
+}
+
+// RFC2317Zone returns the classless child zone name for an IPv4 prefix
+// longer than /24 (RFC 2317), e.g. 192.0.2.64/26 → "64-127.2.0.192.in-addr.arpa.".
+// The hyphen form is used because "/" needs escaping in many DNS tools.
+func RFC2317Zone(p netip.Prefix) (string, error) {
+	p = NormalizePrefix(p)
+	if !p.IsValid() || !p.Addr().Is4() || p.Bits() <= 24 {
+		return "", fmt.Errorf("%w: RFC 2317 needs an IPv4 prefix longer than /24, got %s", ErrInvalidPrefix, p)
+	}
+	b, l := p.Addr().As4(), Last(p).As4()
+	return fmt.Sprintf("%d-%d.%d.%d.%d.in-addr.arpa.", b[3], l[3], b[2], b[1], b[0]), nil
+}
+
+// RFC2317CNAMEs returns the CNAMEs the parent /24 zone publishes so each
+// address in p resolves through the classless child zone.
+func RFC2317CNAMEs(p netip.Prefix) ([]CNAME, error) {
+	zone, err := RFC2317Zone(p)
+	if err != nil {
+		return nil, err
+	}
+	p = NormalizePrefix(p)
+	out := make([]CNAME, 0, 1<<(32-p.Bits()))
+	for a := range RangeOf(p).All() {
+		name, _ := ReverseName(a)
+		host := a.As4()[3]
+		out = append(out, CNAME{name, fmt.Sprintf("%d.%s", host, zone)})
 	}
 	return out, nil
 }

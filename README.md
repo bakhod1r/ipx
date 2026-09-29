@@ -23,10 +23,13 @@ go install github.com/bakhod1r/ipx/cmd/ipx@latest
 | Longest-prefix match | `Table[V]` trie, `SyncTable[V]` |
 | ACL | `ACL` with `LongestPrefix` / `FirstMatch`, priorities, groups; `Allowlist`, `Denylist` |
 | Allocation | `Allocator`: sequential, reverse, random, `Reserve`, `Claim`, `Release`, exclusions |
-| DNS | `ReverseName`, `ParseReverseName`, `ReverseZones` |
+| DNS | `ReverseName`, `ParseReverseName`, `ReverseZones`, `RFC2317Zone`, `RFC2317CNAMEs` |
 | Endpoints | `ParseEndpoint`, `ParsePort`, `SplitHostPort`, `ParseHost`, `FormatEndpoint` |
 | Security (SSRF) | `IsInternal`, `IsCloudMetadata`, `EmbeddedIPv4` (mapped / compatible / NAT64 / 6to4), `SafeDialer` (rebinding-safe) |
 | Inspection | `InspectAddr`, `InspectPrefix` |
+| Hierarchy | `FindOverlaps`, `BuildTree` |
+| Batch | `IPSet.ContainsBatch`, `Table.LookupBatch`, `ParseAddrs`, `ParsePrefixes` |
+| Kubernetes (`ipx/k8s`) | `Networks.Validate` (pod/service/node overlap), `NodeCIDRs`, `MaxNodes`, `ServiceIP`, `APIServerIP`, `DNSServiceIP` |
 | HTTP (`ipx/httpip`) | trusted-proxy client IP, context middleware, ACL `Restrict` |
 
 ## Examples
@@ -51,16 +54,27 @@ ipx alloc 10.0.0.0/24 5 --reserve 10.0.0.1
 ipx --json cidr 10.0.0.0/22                  # machine-readable output
 ```
 
+## Performance
+
+vs [`go4.org/netipx`](https://pkg.go.dev/go4.org/netipx) (Apple M-series, `cd bench && go test -bench .`):
+
+| Operation | ipx | netipx |
+|---|---|---|
+| `IPSet.Contains`, 10k ranges | 89 ns, 0 allocs | 90 ns, 0 allocs |
+| `Range.Prefixes` (10.0.0.5–10.200.3.77) | 765 ns | 1035 ns |
+| `IPSet` build, 10k prefixes | ~1.7–2.3 ms | ~1.6 ms |
+
 ## Guarantees
 
 - No panics on user input (`Must*` helpers excepted); errors match with `errors.Is`.
 - IPv4-mapped IPv6 is unmapped before classification, set membership and ACL checks.
 - `IPSet`, `Range` immutable; `ACL`, `Allocator`, `SyncTable` goroutine-safe; `Table` single-writer.
 - IPv4 `/31` and `/32` follow RFC 3021 (all addresses usable).
+- 100% statement coverage, enforced in CI.
 
 ## Not included (by design)
 
-Framework middleware (Gin/Echo/Fiber), PostgreSQL/MySQL scanners and Kubernetes helpers pull in dependencies; they belong in separate modules.
+Framework middleware (Gin/Echo/Fiber) and PostgreSQL/MySQL scanners pull in dependencies; they belong in separate modules.
 
 ## License
 
