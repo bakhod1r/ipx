@@ -2,6 +2,7 @@ package ipx
 
 import (
 	"iter"
+	"math/bits"
 	"net/netip"
 	"sync"
 )
@@ -17,84 +18,124 @@ type Table[V any] struct {
 	n      int
 }
 
+// node is a path-compressed trie node: it stands for prefix key/bits and
+// only exists where a value is stored or two branches diverge.
 type node[V any] struct {
+	key   u128 // masked to bits
+	bits  int
 	child [2]*node[V]
 	val   V
 	set   bool
 }
 
-func (t *Table[V]) root(is4 bool, create bool) **node[V] {
-	r := &t.v6
+func (t *Table[V]) root(is4 bool) **node[V] {
 	if is4 {
-		r = &t.v4
+		return &t.v4
 	}
-	if *r == nil && create {
-		*r = &node[V]{}
-	}
-	return r
+	return &t.v6
 }
 
 // Len returns the number of stored prefixes.
 func (t *Table[V]) Len() int { return t.n }
 
+// commonBits returns the length of the common leading bits of a and b,
+// capped at limit, in a width-bit space.
+func commonBits(a, b u128, width, limit int) int {
+	x := u128{a.hi ^ b.hi, a.lo ^ b.lo}
+	var lz int
+	if x.hi != 0 {
+		lz = bits.LeadingZeros64(x.hi)
+	} else {
+		lz = 64 + bits.LeadingZeros64(x.lo)
+	}
+	return min(lz-(128-width), limit)
+}
+
+func keyOf(p netip.Prefix) (u128, int, int, bool) {
+	p = NormalizePrefix(p)
+	if !p.IsValid() {
+		return u128{}, 0, 0, false
+	}
+	return toU128(p.Addr()), p.Bits(), p.Addr().BitLen(), true
+}
+
 // Insert stores v at p, replacing any existing value. Invalid p is ignored
 // and reported as false.
 func (t *Table[V]) Insert(p netip.Prefix, v V) bool {
-	p = NormalizePrefix(p)
-	if !p.IsValid() {
+	key, plen, w, ok := keyOf(p)
+	if !ok {
 		return false
 	}
-	a, w := p.Addr(), p.Addr().BitLen()
-	u := toU128(a)
-	n := *t.root(a.Is4(), true)
-	for i := 0; i < p.Bits(); i++ {
-		b := u.bit(i, w)
-		if n.child[b] == nil {
-			n.child[b] = &node[V]{}
+	link := t.root(w == 32)
+	for {
+		n := *link
+		if n == nil {
+			*link = &node[V]{key: key, bits: plen, val: v, set: true}
+			t.n++
+			return true
 		}
-		n = n.child[b]
-	}
-	if !n.set {
+		c := commonBits(n.key, key, w, min(n.bits, plen))
+		if c == n.bits {
+			if plen == n.bits {
+				if !n.set {
+					t.n++
+				}
+				n.val, n.set = v, true
+				return true
+			}
+			link = &n.child[key.bit(n.bits, w)]
+			continue
+		}
+		// Diverge above n: insert a node at depth c.
+		mid := &node[V]{key: key.and(hostMask(c, w).not()), bits: c}
+		mid.child[n.key.bit(c, w)] = n
+		if c == plen {
+			mid.val, mid.set = v, true
+		} else {
+			mid.child[key.bit(c, w)] = &node[V]{key: key, bits: plen, val: v, set: true}
+		}
+		*link = mid
 		t.n++
+		return true
 	}
-	n.val, n.set = v, true
-	return true
 }
 
 // Delete removes p; false if it was absent.
 func (t *Table[V]) Delete(p netip.Prefix) bool {
-	p = NormalizePrefix(p)
-	if !p.IsValid() {
+	key, plen, w, ok := keyOf(p)
+	if !ok {
 		return false
 	}
-	a, w := p.Addr(), p.Addr().BitLen()
-	u := toU128(a)
-	root := t.root(a.Is4(), false)
-	if *root == nil {
-		return false
-	}
-	path := []*node[V]{*root}
-	n := *root
-	for i := 0; i < p.Bits(); i++ {
-		n = n.child[u.bit(i, w)]
-		if n == nil {
+	var path []**node[V]
+	link := t.root(w == 32)
+	for *link != nil {
+		n := *link
+		if n.bits > plen || commonBits(n.key, key, w, n.bits) < n.bits {
 			return false
 		}
-		path = append(path, n)
+		path = append(path, link)
+		if n.bits == plen {
+			break
+		}
+		link = &n.child[key.bit(n.bits, w)]
 	}
-	if !n.set {
+	if *link == nil || (*link).bits != plen || !(*link).set {
 		return false
 	}
 	var zero V
-	n.val, n.set = zero, false
+	(*link).val, (*link).set = zero, false
 	t.n--
-	// Prune empty leaves.
-	for i := len(path) - 1; i > 0; i-- {
-		cur := path[i]
-		if cur.set || cur.child[0] != nil || cur.child[1] != nil {
+	// Collapse from the bottom: drop valueless nodes with <2 children.
+	for i := len(path) - 1; i >= 0; i-- {
+		n := *path[i]
+		if n.set || (n.child[0] != nil && n.child[1] != nil) {
 			break
 		}
-		path[i-1].child[u.bit(i-1, w)] = nil
+		if n.child[0] != nil {
+			*path[i] = n.child[0]
+		} else {
+			*path[i] = n.child[1]
+		}
 	}
 	return true
 }
@@ -102,20 +143,21 @@ func (t *Table[V]) Delete(p netip.Prefix) bool {
 // Get returns the value stored at exactly p.
 func (t *Table[V]) Get(p netip.Prefix) (V, bool) {
 	var zero V
-	p = NormalizePrefix(p)
-	if !p.IsValid() {
+	key, plen, w, ok := keyOf(p)
+	if !ok {
 		return zero, false
 	}
-	a, w := p.Addr(), p.Addr().BitLen()
-	u := toU128(a)
-	n := *t.root(a.Is4(), false)
-	for i := 0; n != nil && i < p.Bits(); i++ {
-		n = n.child[u.bit(i, w)]
+	n := *t.root(w == 32)
+	for n != nil && n.bits <= plen && commonBits(n.key, key, w, n.bits) == n.bits {
+		if n.bits == plen {
+			if n.set {
+				return n.val, true
+			}
+			return zero, false
+		}
+		n = n.child[key.bit(n.bits, w)]
 	}
-	if n == nil || !n.set {
-		return zero, false
-	}
-	return n.val, true
+	return zero, false
 }
 
 // walk visits every stored prefix containing a, shortest first.
@@ -126,30 +168,40 @@ func (t *Table[V]) walk(a netip.Addr, fn func(bits int, v V) bool) {
 	}
 	w := a.BitLen()
 	u := toU128(a)
-	n := *t.root(a.Is4(), false)
-	for i := 0; n != nil; i++ {
-		if n.set && !fn(i, n.val) {
+	n := *t.root(a.Is4())
+	for n != nil && u.and(lowOnes(w-n.bits).not()) == n.key {
+		if n.set && !fn(n.bits, n.val) {
 			return
 		}
-		if i == w {
+		if n.bits == w {
 			return
 		}
-		n = n.child[u.bit(i, w)]
+		n = n.child[u.bit(n.bits, w)]
 	}
 }
 
 // Lookup returns the longest stored prefix containing a and its value.
 func (t *Table[V]) Lookup(a netip.Addr) (netip.Prefix, V, bool) {
-	var (
-		best  V
-		bits  = -1
-		naddr = Normalize(a)
-	)
-	t.walk(naddr, func(b int, v V) bool { bits, best = b, v; return true })
-	if bits < 0 {
-		return netip.Prefix{}, best, false
+	var best *node[V]
+	a = Normalize(a)
+	if a.IsValid() {
+		w := a.BitLen()
+		u := toU128(a)
+		for n := *t.root(a.Is4()); n != nil && u.and(lowOnes(w-n.bits).not()) == n.key; {
+			if n.set {
+				best = n
+			}
+			if n.bits == w {
+				break
+			}
+			n = n.child[u.bit(n.bits, w)]
+		}
 	}
-	return netip.PrefixFrom(naddr, bits).Masked(), best, true
+	if best == nil {
+		var zero V
+		return netip.Prefix{}, zero, false
+	}
+	return netip.PrefixFrom(fromU128(best.key, a.Is4()), best.bits), best.val, true
 }
 
 // LookupShortest returns the shortest stored prefix containing a.
@@ -181,31 +233,20 @@ func (t *Table[V]) Matches(a netip.Addr) []V {
 // address order with shorter prefixes before their children.
 func (t *Table[V]) All() iter.Seq2[netip.Prefix, V] {
 	return func(yield func(netip.Prefix, V) bool) {
-		if !dfs(t.v4, u128{}, 0, true, yield) {
-			return
+		if dfs(t.v4, true, yield) {
+			dfs(t.v6, false, yield)
 		}
-		dfs(t.v6, u128{}, 0, false, yield)
 	}
 }
 
-func dfs[V any](n *node[V], u u128, depth int, is4 bool, yield func(netip.Prefix, V) bool) bool {
+func dfs[V any](n *node[V], is4 bool, yield func(netip.Prefix, V) bool) bool {
 	if n == nil {
 		return true
 	}
-	w := 128
-	if is4 {
-		w = 32
-	}
-	if n.set && !yield(netip.PrefixFrom(fromU128(u, is4), depth), n.val) {
+	if n.set && !yield(netip.PrefixFrom(fromU128(n.key, is4), n.bits), n.val) {
 		return false
 	}
-	if !dfs(n.child[0], u, depth+1, is4, yield) {
-		return false
-	}
-	if n.child[1] != nil {
-		return dfs(n.child[1], u.setBit(depth, w), depth+1, is4, yield)
-	}
-	return true
+	return dfs(n.child[0], is4, yield) && dfs(n.child[1], is4, yield)
 }
 
 // SyncTable is a Table guarded by a RWMutex: many concurrent readers, one

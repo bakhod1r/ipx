@@ -16,4 +16,5 @@ var (
 	ErrExhausted       = errors.New("ipx: address pool exhausted")
 	ErrNotInPool       = errors.New("ipx: address outside pool")
 	ErrInUse           = errors.New("ipx: address already allocated or reserved")
+	ErrBlockedAddr     = errors.New("ipx: destination address blocked")
 )

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ipx — IP networking toolkit for Go</title>
+<meta name="description" content="Dependency-free IP, CIDR, range, set, trie, ACL and SSRF toolkit for Go, built on net/netip.">
+<style>
+:root{--bg:#fbfaf7;--fg:#1c1b19;--mute:#6b675f;--line:#e4e0d6;--card:#fff;--accent:#0b6e4f;--code:#f3f0e8}
+@media (prefers-color-scheme:dark){:root{--bg:#141412;--fg:#ebe8e1;--mute:#9a958a;--line:#2b2a26;--card:#1b1a17;--accent:#4fc59a;--code:#221f1b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:920px;margin:0 auto;padding:48px 16px 80px}
+h1{font-size:44px;letter-spacing:-.02em;margin:0 0 8px}
+h1 span{color:var(--accent)}
+h2{font-size:22px;margin:48px 0 12px}
+p.lead{font-size:19px;color:var(--mute);margin:0 0 24px;max-width:640px}
+code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:0}
+a{color:var(--accent)}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px}
+.btn{display:inline-block;padding:9px 16px;border-radius:8px;border:1px solid var(--line);text-decoration:none;color:var(--fg);background:var(--card)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h3{margin:0 0 4px;font-size:15px}
+.card p{margin:0;color:var(--mute);font-size:14px}
+.card code{font-size:12.5px}
+ul.g{padding-left:18px;color:var(--mute)}
+footer{margin-top:56px;color:var(--mute);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<main>
+<h1>ipx<span>.</span></h1>
+<p class="lead">Dependency-free IP networking toolkit for Go, built on <code>net/netip</code>. CIDR math, ranges, set algebra, longest-prefix match, ACLs, allocation and SSRF-safe dialing.</p>
+<div class="btns">
+  <a class="btn primary" href="https://pkg.go.dev/github.com/bakhod1r/ipx">API reference</a>
+  <a class="btn" href="https://github.com/bakhod1r/ipx">GitHub</a>
+  <a class="btn" href="https://github.com/bakhod1r/ipx/releases">Releases</a>
+</div>
+<pre>go get github.com/bakhod1r/ipx
+go install github.com/bakhod1r/ipx/cmd/ipx@latest</pre>
+
+<h2>Features</h2>
+<div class="grid">
+  <div class="card"><h3>Parse &amp; classify</h3><p>Strict parsing, IANA special-purpose registry, <code>IsPublic</code>, <code>IsPrivate</code>, <code>Special</code>.</p></div>
+  <div class="card"><h3>CIDR math</h3><p>Split (lazy), supernet, parent/children, masks, usable hosts, VLSM <code>PlanSubnets</code>.</p></div>
+  <div class="card"><h3>Ranges &amp; sets</h3><p>Immutable <code>IPSet</code>: union, intersect, difference, complement, <code>Aggregate</code>.</p></div>
+  <div class="card"><h3>Longest-prefix match</h3><p>Path-compressed <code>Table[V]</code>, zero-alloc lookup, <code>SyncTable</code>.</p></div>
+  <div class="card"><h3>ACL</h3><p>Allow/deny rules, longest-prefix or first-match, priorities and groups.</p></div>
+  <div class="card"><h3>Allocator</h3><p>Sequential, reverse and random allocation with reserve / release.</p></div>
+  <div class="card"><h3>SSRF guard</h3><p><code>IsInternal</code> + <code>SafeDialer</code>: sees through mapped, NAT64 and 6to4 forms; no DNS rebinding.</p></div>
+  <div class="card"><h3>HTTP</h3><p><code>httpip</code>: client IP behind explicitly trusted proxies, middleware.</p></div>
+  <div class="card"><h3>DNS &amp; endpoints</h3><p>PTR names, reverse zones, <code>ip:port</code> parsing with IPv6 brackets.</p></div>
+</div>
+
+<h2>Example</h2>
+<pre>var rt ipx.Table[string]
+rt.Insert(netip.MustParsePrefix("10.0.0.0/8"), "corp")
+rt.Insert(netip.MustParsePrefix("10.10.10.0/24"), "lab")
+p, v, _ := rt.Lookup(netip.MustParseAddr("10.10.10.50")) // 10.10.10.0/24 lab
+
+ipx.Aggregate(prefixes)             // minimal CIDR cover
+ipx.IsInternal(addr)                // SSRF check
+client := &amp;http.Client{Transport: &amp;http.Transport{
+    DialContext: (&amp;ipx.SafeDialer{}).DialContext,
+}}</pre>
+
+<h2>CLI</h2>
+<pre>$ ipx split 192.168.1.0/24 26
+$ ipx diff 10.0.0.0/24 10.0.0.0/25
+10.0.0.128/25
+$ ipx info ::ffff:169.254.169.254</pre>
+
+<h2>Guarantees</h2>
+<ul class="g">
+  <li>No panics on user input; errors match with <code>errors.Is</code>.</li>
+  <li>IPv4-mapped IPv6 is unmapped before every security decision.</li>
+  <li>Tested with race detector, fuzzing and property checks.</li>
+</ul>
+<footer><a href="https://github.com/bakhod1r/ipx">github.com/bakhod1r/ipx</a></footer>
+</main>
+</body>
+</html>

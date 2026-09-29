@@ -17,12 +17,12 @@ var metadataSet = NewIPSet(CloudMetadata)
 // IsCloudMetadata reports whether a is a known cloud metadata endpoint,
 // including when embedded in IPv4-mapped/compatible/NAT64/6to4 form.
 func IsCloudMetadata(a netip.Addr) bool {
-	for _, x := range candidates(a) {
-		if metadataSet.Contains(x) {
-			return true
-		}
+	n := Normalize(a)
+	if metadataSet.Contains(n) {
+		return true
 	}
-	return false
+	v4, ok := EmbeddedIPv4(n)
+	return ok && metadataSet.Contains(v4)
 }
 
 // EmbeddedIPv4 extracts an IPv4 address carried inside an IPv6 address via
@@ -46,16 +46,6 @@ var (
 	sixToFour = MustParsePrefix("2002::/16")
 )
 
-// candidates returns a normalized plus any embedded IPv4 address.
-func candidates(a netip.Addr) []netip.Addr {
-	n := Normalize(a)
-	out := []netip.Addr{n}
-	if v4, ok := EmbeddedIPv4(n); ok {
-		out = append(out, v4)
-	}
-	return out
-}
-
 // IsInternal reports whether a must not be reached from a server fetching
 // user-supplied URLs (SSRF guard). True for invalid, loopback, private,
 // link-local, shared, reserved, multicast, unspecified, documentation,
@@ -68,12 +58,12 @@ func IsInternal(a netip.Addr) bool {
 	if !a.IsValid() {
 		return true
 	}
-	for _, x := range candidates(a) {
-		if !IsPublic(x) || IsCloudMetadata(x) {
-			return true
-		}
+	n := Normalize(a)
+	if !IsPublic(n) || IsCloudMetadata(n) {
+		return true
 	}
-	return false
+	v4, ok := EmbeddedIPv4(n)
+	return ok && !IsPublic(v4)
 }
 
 // IsSafeTarget is !IsInternal.

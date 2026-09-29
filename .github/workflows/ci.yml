@@ -1,0 +1,26 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        go: ["1.24", "stable"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race -coverprofile=cover.out ./...
+      - name: fuzz (short)
+        run: |
+          for f in FuzzRangePrefixes FuzzParseNoPanic FuzzSetAlgebra FuzzTableVsLinear; do
+            go test -run XXX -fuzz "^$f\$" -fuzztime 15s .
+          done

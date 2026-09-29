@@ -1,5 +1,7 @@
 # ipx
 
+[![ci](https://github.com/bakhod1r/ipx/actions/workflows/ci.yml/badge.svg)](https://github.com/bakhod1r/ipx/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/bakhod1r/ipx.svg)](https://pkg.go.dev/github.com/bakhod1r/ipx) · [Website](https://bakhod1r.github.io/ipx/)
+
 Dependency-free IP networking toolkit for Go, built on `net/netip`.
 
 ```sh
@@ -23,7 +25,7 @@ go install github.com/bakhod1r/ipx/cmd/ipx@latest
 | Allocation | `Allocator`: sequential, reverse, random, `Reserve`, `Claim`, `Release`, exclusions |
 | DNS | `ReverseName`, `ParseReverseName`, `ReverseZones` |
 | Endpoints | `ParseEndpoint`, `ParsePort`, `SplitHostPort`, `ParseHost`, `FormatEndpoint` |
-| Security (SSRF) | `IsInternal`, `IsCloudMetadata`, `EmbeddedIPv4` (mapped / compatible / NAT64 / 6to4) |
+| Security (SSRF) | `IsInternal`, `IsCloudMetadata`, `EmbeddedIPv4` (mapped / compatible / NAT64 / 6to4), `SafeDialer` (rebinding-safe) |
 | Inspection | `InspectAddr`, `InspectPrefix` |
 | HTTP (`ipx/httpip`) | trusted-proxy client IP, context middleware, ACL `Restrict` |
 

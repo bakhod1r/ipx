@@ -91,9 +91,7 @@ func Special(a netip.Addr) (SpecialBlock, bool) {
 // Categories returns the category bits of every special block containing a.
 func Categories(a netip.Addr) Category {
 	var c Category
-	for _, b := range specialTable.Matches(Normalize(a)) {
-		c |= b.Category
-	}
+	specialTable.walk(Normalize(a), func(_ int, b SpecialBlock) bool { c |= b.Category; return true })
 	return c
 }
 
@@ -142,12 +140,9 @@ func IsPublic(a netip.Addr) bool {
 	if !a.IsValid() || !a.IsGlobalUnicast() {
 		return false
 	}
-	for _, b := range specialTable.Matches(a) {
-		if !b.Global {
-			return false
-		}
-	}
-	return true
+	public := true
+	specialTable.walk(a, func(_ int, b SpecialBlock) bool { public = b.Global; return public })
+	return public
 }
 
 // IsIPv4Mapped reports ::ffff:a.b.c.d.

@@ -95,6 +95,33 @@ func (r *Range) UnmarshalText(b []byte) error {
 	return nil
 }
 
+// MarshalBinary encodes as from||to raw bytes (8 or 32 bytes).
+func (r Range) MarshalBinary() ([]byte, error) {
+	if !r.IsValid() {
+		return []byte{}, nil
+	}
+	return append(r.from.AsSlice(), r.to.AsSlice()...), nil
+}
+
+// UnmarshalBinary decodes MarshalBinary output.
+func (r *Range) UnmarshalBinary(b []byte) error {
+	if len(b) == 0 {
+		*r = Range{}
+		return nil
+	}
+	if len(b) != 8 && len(b) != 32 {
+		return ErrInvalidRange
+	}
+	from, _ := netip.AddrFromSlice(b[:len(b)/2])
+	to, _ := netip.AddrFromSlice(b[len(b)/2:])
+	v, err := NewRange(from, to)
+	if err != nil {
+		return err
+	}
+	*r = v
+	return nil
+}
+
 // Size returns the number of addresses.
 func (r Range) Size() *big.Int {
 	if !r.IsValid() {

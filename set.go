@@ -156,15 +156,7 @@ func (s *IPSet) Size() *big.Int {
 func (s *IPSet) Contains(a netip.Addr) bool {
 	a = Normalize(a)
 	rs := s.ranges()
-	i, _ := slices.BinarySearchFunc(rs, a, func(r Range, a netip.Addr) int {
-		if r.to.Compare(a) < 0 {
-			return -1
-		}
-		if r.from.Compare(a) > 0 {
-			return 1
-		}
-		return 0
-	})
+	i := s.index(a)
 	return i < len(rs) && rs[i].Contains(a)
 }
 
@@ -176,12 +168,36 @@ func (s *IPSet) ContainsRange(r Range) bool {
 	if !r.IsValid() {
 		return false
 	}
-	for _, x := range s.ranges() {
-		if x.ContainsRange(r) {
-			return true
+	rs := s.ranges()
+	i := s.index(r.from)
+	return i < len(rs) && rs[i].ContainsRange(r)
+}
+
+// index returns the position of the range containing a, or where it would be.
+func (s *IPSet) index(a netip.Addr) int {
+	i, _ := slices.BinarySearchFunc(s.ranges(), a, func(r Range, a netip.Addr) int {
+		if r.to.Compare(a) < 0 {
+			return -1
 		}
+		if r.from.Compare(a) > 0 {
+			return 1
+		}
+		return 0
+	})
+	return i
+}
+
+// MarshalText encodes the set as its comma-separated prefix list.
+func (s *IPSet) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
+
+// UnmarshalText accepts anything ParseIPSet accepts.
+func (s *IPSet) UnmarshalText(b []byte) error {
+	v, err := ParseIPSet(string(b))
+	if err != nil {
+		return err
 	}
-	return false
+	*s = *v
+	return nil
 }
 
 // Overlaps reports whether the sets share any address.
