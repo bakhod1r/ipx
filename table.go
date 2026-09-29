@@ -22,10 +22,15 @@ type Table[V any] struct {
 // only exists where a value is stored or two branches diverge.
 type node[V any] struct {
 	key   u128 // masked to bits
+	mask  u128 // network mask for bits, precomputed for lookup
 	bits  int
 	child [2]*node[V]
 	val   V
 	set   bool
+}
+
+func newNode[V any](key u128, bits, w int, v V) *node[V] {
+	return &node[V]{key: key, mask: hostMask(bits, w).not(), bits: bits, val: v, set: true}
 }
 
 func (t *Table[V]) root(is4 bool) **node[V] {
@@ -70,7 +75,7 @@ func (t *Table[V]) Insert(p netip.Prefix, v V) bool {
 	for {
 		n := *link
 		if n == nil {
-			*link = &node[V]{key: key, bits: plen, val: v, set: true}
+			*link = newNode[V](key, plen, w, v)
 			t.n++
 			return true
 		}
@@ -87,12 +92,12 @@ func (t *Table[V]) Insert(p netip.Prefix, v V) bool {
 			continue
 		}
 		// Diverge above n: insert a node at depth c.
-		mid := &node[V]{key: key.and(hostMask(c, w).not()), bits: c}
+		mid := &node[V]{key: key.and(hostMask(c, w).not()), mask: hostMask(c, w).not(), bits: c}
 		mid.child[n.key.bit(c, w)] = n
 		if c == plen {
 			mid.val, mid.set = v, true
 		} else {
-			mid.child[key.bit(c, w)] = &node[V]{key: key, bits: plen, val: v, set: true}
+			mid.child[key.bit(c, w)] = newNode[V](key, plen, w, v)
 		}
 		*link = mid
 		t.n++
@@ -169,7 +174,7 @@ func (t *Table[V]) walk(a netip.Addr, fn func(bits int, v V) bool) {
 	w := a.BitLen()
 	u := toU128(a)
 	n := *t.root(a.Is4())
-	for n != nil && u.and(lowOnes(w-n.bits).not()) == n.key {
+	for n != nil && u.and(n.mask) == n.key {
 		if n.set && !fn(n.bits, n.val) {
 			return
 		}
@@ -187,7 +192,7 @@ func (t *Table[V]) Lookup(a netip.Addr) (netip.Prefix, V, bool) {
 	if a.IsValid() {
 		w := a.BitLen()
 		u := toU128(a)
-		for n := *t.root(a.Is4()); n != nil && u.and(lowOnes(w-n.bits).not()) == n.key; {
+		for n := *t.root(a.Is4()); n != nil && u.and(n.mask) == n.key; {
 			if n.set {
 				best = n
 			}

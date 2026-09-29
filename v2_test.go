@@ -192,3 +192,26 @@ func FuzzTableVsLinear(f *testing.F) {
 		}
 	})
 }
+
+// Near-full pool: a single free slot far behind the cursor must be found
+// without walking the whole pool.
+func TestAllocatorNearFullFast(t *testing.T) {
+	al, _ := NewAllocator(P("10.0.0.0/16"))
+	for {
+		if _, err := al.Allocate(); err != nil {
+			break
+		}
+	}
+	hole := A("10.0.0.1")
+	res := testing.Benchmark(func(b *testing.B) {
+		for b.Loop() {
+			al.Release(hole)
+			if a, err := al.Allocate(); err != nil || a != hole {
+				b.Fatal(a, err)
+			}
+		}
+	})
+	if ns := res.NsPerOp(); ns > 20000 {
+		t.Errorf("Allocate on near-full /16: %d ns/op, want O(log n)", ns)
+	}
+}

@@ -58,3 +58,7 @@ ipx info 2001:db8::1
 ## Not included (by design)
 
 Framework middleware (Gin/Echo/Fiber), PostgreSQL/MySQL scanners and Kubernetes helpers pull in dependencies; they belong in separate modules.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

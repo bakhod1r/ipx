@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/netip"
+	"slices"
 	"sync"
 )
 
@@ -16,6 +17,7 @@ type Allocator struct {
 	mu        sync.Mutex
 	pool      Range
 	exclude   *IPSet
+	taken     []Range // sorted, merged: exclusions + used + reserved
 	used      map[netip.Addr]struct{}
 	reserved  map[netip.Addr]struct{}
 	cursor    netip.Addr
@@ -46,6 +48,7 @@ func NewRangeAllocator(r Range, exclude ...netip.Prefix) (*Allocator, error) {
 	return &Allocator{
 		pool:      r,
 		exclude:   ex,
+		taken:     ex.Ranges(),
 		used:      map[netip.Addr]struct{}{},
 		reserved:  map[netip.Addr]struct{}{},
 		cursor:    r.from,
@@ -53,14 +56,52 @@ func NewRangeAllocator(r Range, exclude ...netip.Prefix) (*Allocator, error) {
 	}, nil
 }
 
-func (al *Allocator) free(a netip.Addr) bool {
-	if _, ok := al.used[a]; ok {
-		return false
+// takenIndex returns the index of the taken range containing a, or -1.
+func (al *Allocator) takenIndex(a netip.Addr) int {
+	i, found := slices.BinarySearchFunc(al.taken, a, func(r Range, a netip.Addr) int {
+		if r.to.Compare(a) < 0 {
+			return -1
+		}
+		if r.from.Compare(a) > 0 {
+			return 1
+		}
+		return 0
+	})
+	if !found {
+		return -1
 	}
-	if _, ok := al.reserved[a]; ok {
-		return false
+	return i
+}
+
+func (al *Allocator) free(a netip.Addr) bool { return al.takenIndex(a) < 0 }
+
+// markTaken inserts a single free address into taken, merging neighbors.
+func (al *Allocator) markTaken(a netip.Addr) {
+	r := Range{a, a}
+	i, _ := slices.BinarySearchFunc(al.taken, a, func(x Range, a netip.Addr) int { return x.from.Compare(a) })
+	al.taken = slices.Insert(al.taken, i, r)
+	if i+1 < len(al.taken) {
+		if m, ok := al.taken[i].Merge(al.taken[i+1]); ok {
+			al.taken[i] = m
+			al.taken = slices.Delete(al.taken, i+1, i+2)
+		}
 	}
-	return !al.exclude.Contains(a)
+	if i > 0 {
+		if m, ok := al.taken[i-1].Merge(al.taken[i]); ok {
+			al.taken[i-1] = m
+			al.taken = slices.Delete(al.taken, i, i+1)
+		}
+	}
+}
+
+// unmarkTaken removes a from taken, splitting its range.
+func (al *Allocator) unmarkTaken(a netip.Addr) {
+	i := al.takenIndex(a)
+	if i < 0 {
+		return
+	}
+	parts := al.taken[i].Subtract(Range{a, a})
+	al.taken = slices.Replace(al.taken, i, i+1, parts...)
 }
 
 // Available returns how many addresses can still be allocated.
@@ -143,37 +184,39 @@ func (al *Allocator) AllocateRandom() (netip.Addr, error) {
 	return a, nil
 }
 
-// scan walks the pool from start in dir (±1), wrapping once. Caller holds mu.
+// scan finds the first free address from start in dir (±1), wrapping once.
+// O(log n) in the number of taken runs. Caller holds mu.
 func (al *Allocator) scan(start netip.Addr, dir int) (netip.Addr, error) {
 	if al.available.Sign() == 0 {
 		return netip.Addr{}, ErrExhausted
 	}
 	a := start
-	for {
-		if al.free(a) {
+	for range 2 { // at most one wrap
+		i := al.takenIndex(a)
+		if i < 0 {
 			return a, nil
 		}
 		var next netip.Addr
 		if dir > 0 {
-			next = a.Next()
-			if !next.IsValid() || !al.pool.Contains(next) {
-				next = al.pool.from
-			}
+			next = al.taken[i].to.Next()
 		} else {
-			next = a.Prev()
-			if !next.IsValid() || !al.pool.Contains(next) {
-				next = al.pool.to
-			}
+			next = al.taken[i].from.Prev()
 		}
-		if next == start {
-			return netip.Addr{}, ErrExhausted
+		if next.IsValid() && al.pool.Contains(next) {
+			return next, nil // taken is merged, so the neighbor is free
 		}
-		a = next
+		if dir > 0 {
+			a = al.pool.from
+		} else {
+			a = al.pool.to
+		}
 	}
+	return netip.Addr{}, ErrExhausted
 }
 
 func (al *Allocator) take(a netip.Addr) {
 	al.used[a] = struct{}{}
+	al.markTaken(a)
 	al.available.Sub(al.available, big.NewInt(1))
 }
 
@@ -194,6 +237,7 @@ func (al *Allocator) mark(a netip.Addr, m map[netip.Addr]struct{}) error {
 		return fmt.Errorf("%w: %s", ErrInUse, a)
 	}
 	m[a] = struct{}{}
+	al.markTaken(a)
 	al.available.Sub(al.available, big.NewInt(1))
 	return nil
 }
@@ -206,6 +250,7 @@ func (al *Allocator) Release(a netip.Addr) bool {
 	for _, m := range []map[netip.Addr]struct{}{al.used, al.reserved} {
 		if _, ok := m[a]; ok {
 			delete(m, a)
+			al.unmarkTaken(a)
 			al.available.Add(al.available, big.NewInt(1))
 			return true
 		}
