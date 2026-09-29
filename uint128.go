@@ -116,5 +116,3 @@ func u128FromBig(x *big.Int) (u128, bool) {
 	hi := new(big.Int).Rsh(x, 64)
 	return u128{hi.Uint64(), lo.Uint64()}, true
 }
-
-func width(a netip.Addr) int { return a.BitLen() }

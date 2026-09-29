@@ -43,7 +43,7 @@ func (res *Resolver) ClientIP(r *http.Request) (netip.Addr, error) {
 		for i := len(hops) - 1; i >= 0; i-- {
 			a, err := ipx.ParseHost(strings.TrimSpace(hops[i]))
 			if err != nil {
-				return peer, nil // malformed chain: fall back to the trusted peer
+				return peer, nil //nolint:nilerr // malformed chain: fall back to the trusted peer
 			}
 			if !res.trusted.Contains(a) {
 				return a, nil

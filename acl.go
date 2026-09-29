@@ -53,20 +53,22 @@ type ACL struct {
 // NewACL returns an ACL returning def when no rule matches.
 func NewACL(s Strategy, def Action) *ACL { return &ACL{strategy: s, def: def} }
 
-// Allowlist denies everything except the given networks.
+// Allowlist denies everything except the given networks. Invalid prefixes
+// are skipped.
 func Allowlist(ps ...netip.Prefix) *ACL {
 	a := NewACL(LongestPrefix, Deny)
 	for _, p := range ps {
-		a.Add(Rule{Prefix: p, Action: Allow})
+		_ = a.Add(Rule{Prefix: p, Action: Allow})
 	}
 	return a
 }
 
-// Denylist allows everything except the given networks.
+// Denylist allows everything except the given networks. Invalid prefixes
+// are skipped.
 func Denylist(ps ...netip.Prefix) *ACL {
 	a := NewACL(LongestPrefix, Allow)
 	for _, p := range ps {
-		a.Add(Rule{Prefix: p, Action: Deny})
+		_ = a.Add(Rule{Prefix: p, Action: Deny})
 	}
 	return a
 }

@@ -1,0 +1,26 @@
+version: "2"
+linters:
+  enable:
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true   # short self-explanatory methods (Range.From etc.) documented at type level
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [errcheck, unparam]
+      - path: cmd/ipx/main\.go
+        text: "Error return value of `(json.*Encode|fmt.Fprint)"
+        linters: [errcheck]
+formatters:
+  enable:
+    - gofmt

@@ -304,7 +304,7 @@ func TestRange(t *testing.T) {
 	if len(a.SplitRange(100)) != 3 {
 		t.Error(a.SplitRange(100))
 	}
-	merged := MergeRanges([]Range{b, a, {}, Range{A("10.0.1.11"), A("10.0.1.11")}})
+	merged := MergeRanges([]Range{b, a, {}, {A("10.0.1.11"), A("10.0.1.11")}})
 	if len(merged) != 1 || merged[0].String() != "10.0.0.0-10.0.1.11" {
 		t.Error(merged)
 	}

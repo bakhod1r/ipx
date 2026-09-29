@@ -46,6 +46,9 @@ ipx.IsInternal(A("::ffff:169.254.169.254")) // true — mapped form cannot bypas
 ipx split 192.168.1.0/24 26
 ipx diff 10.0.0.0/24 10.0.0.0/25
 ipx info 2001:db8::1
+ipx plan 10.0.0.0/24 hosts:100 hosts:50 27   # VLSM
+ipx alloc 10.0.0.0/24 5 --reserve 10.0.0.1
+ipx --json cidr 10.0.0.0/22                  # machine-readable output
 ```
 
 ## Guarantees
