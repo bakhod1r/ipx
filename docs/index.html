@@ -52,7 +52,10 @@ go install github.com/bakhod1r/ipx/cmd/ipx@latest</pre>
   <div class="card"><h3>Allocator</h3><p>Sequential, reverse and random allocation with reserve / release.</p></div>
   <div class="card"><h3>SSRF guard</h3><p><code>IsInternal</code> + <code>SafeDialer</code>: sees through mapped, NAT64 and 6to4 forms; no DNS rebinding.</p></div>
   <div class="card"><h3>HTTP</h3><p><code>httpip</code>: client IP behind explicitly trusted proxies, middleware.</p></div>
-  <div class="card"><h3>DNS &amp; endpoints</h3><p>PTR names, reverse zones, <code>ip:port</code> parsing with IPv6 brackets.</p></div>
+  <div class="card"><h3>DNS &amp; endpoints</h3><p>PTR names, reverse zones, RFC 2317 classless delegation, <code>ip:port</code> parsing.</p></div>
+  <div class="card"><h3>Hierarchy</h3><p><code>FindOverlaps</code> and <code>BuildTree</code> for auditing address plans.</p></div>
+  <div class="card"><h3>Kubernetes</h3><p><code>ipx/k8s</code>: pod/service/node overlap checks, node podCIDRs, service IPs.</p></div>
+  <div class="card"><h3>CLI</h3><p><code>plan</code>, <code>alloc</code>, <code>split</code>, <code>diff</code>… with <code>--json</code> output.</p></div>
 </div>
 
 <h2>Example</h2>
@@ -71,13 +74,15 @@ client := &amp;http.Client{Transport: &amp;http.Transport{
 <pre>$ ipx split 192.168.1.0/24 26
 $ ipx diff 10.0.0.0/24 10.0.0.0/25
 10.0.0.128/25
-$ ipx info ::ffff:169.254.169.254</pre>
+$ ipx plan 10.0.0.0/24 hosts:100 hosts:50 27
+$ ipx --json cidr 10.0.0.0/22</pre>
 
 <h2>Guarantees</h2>
 <ul class="g">
   <li>No panics on user input; errors match with <code>errors.Is</code>.</li>
   <li>IPv4-mapped IPv6 is unmapped before every security decision.</li>
-  <li>Tested with race detector, fuzzing and property checks.</li>
+  <li>100% statement coverage, race detector, fuzzing and property checks — enforced in CI.</li>
+  <li><code>IPSet.Contains</code> on par with netipx; <code>Range.Prefixes</code> 26% faster.</li>
 </ul>
 <footer>MIT License · <a href="https://github.com/bakhod1r/ipx">github.com/bakhod1r/ipx</a></footer>
 </main>
