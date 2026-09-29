@@ -62,8 +62,12 @@ func SplitHostPort(s string) (host string, port uint16, err error) {
 }
 
 // ParseHost extracts and normalizes the IP from any of the SplitHostPort
-// forms. Hostnames are rejected.
+// forms. Only the host matters, so any numeric port (including 0) is
+// accepted. Hostnames are rejected.
 func ParseHost(s string) (netip.Addr, error) {
+	if ap, err := netip.ParseAddrPort(s); err == nil {
+		return ap.Addr().Unmap(), nil
+	}
 	h, _, err := SplitHostPort(s)
 	if err != nil {
 		return netip.Addr{}, err

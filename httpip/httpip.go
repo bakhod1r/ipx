@@ -30,14 +30,21 @@ func New(trustedProxies ...netip.Prefix) *Resolver {
 
 // ClientIP returns the normalized client address of r.
 func (res *Resolver) ClientIP(r *http.Request) (netip.Addr, error) {
-	peer, err := ipx.ParseHost(r.RemoteAddr)
+	return res.Resolve(r.RemoteAddr, r.Header.Values("X-Forwarded-For"), r.Header.Get("X-Real-IP"))
+}
+
+// Resolve is the transport-agnostic core of ClientIP, for servers that do
+// not use net/http (e.g. fasthttp/Fiber). remoteAddr is the direct peer
+// ("ip:port" or bare IP); xff holds every X-Forwarded-For header value.
+func (res *Resolver) Resolve(remoteAddr string, xff []string, xRealIP string) (netip.Addr, error) {
+	peer, err := ipx.ParseHost(remoteAddr)
 	if err != nil {
 		return netip.Addr{}, errors.Join(errors.New("httpip: bad RemoteAddr"), err)
 	}
 	if !res.trusted.Contains(peer) {
 		return peer, nil
 	}
-	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+	if len(xff) > 0 {
 		hops := strings.Split(strings.Join(xff, ","), ",")
 		var leftmost netip.Addr
 		for i := len(hops) - 1; i >= 0; i-- {
@@ -52,12 +59,17 @@ func (res *Resolver) ClientIP(r *http.Request) (netip.Addr, error) {
 		}
 		return leftmost, nil
 	}
-	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
+	if xr := strings.TrimSpace(xRealIP); xr != "" {
 		if a, err := ipx.ParseHost(xr); err == nil {
 			return a, nil
 		}
 	}
 	return peer, nil
+}
+
+// WithClientIP returns ctx carrying a, readable with FromContext.
+func WithClientIP(ctx context.Context, a netip.Addr) context.Context {
+	return context.WithValue(ctx, ctxKey{}, a)
 }
 
 type ctxKey struct{}
@@ -73,7 +85,7 @@ func FromContext(ctx context.Context) (netip.Addr, bool) {
 func (res *Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if a, err := res.ClientIP(r); err == nil {
-			r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, a))
+			r = r.WithContext(WithClientIP(r.Context(), a))
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -87,6 +99,6 @@ func (res *Resolver) Restrict(acl *ipx.ACL, next http.Handler) http.Handler {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, a)))
+		next.ServeHTTP(w, r.WithContext(WithClientIP(r.Context(), a)))
 	})
 }

@@ -564,3 +564,13 @@ func TestU128Edges(t *testing.T) {
 		t.Error("bit in high word")
 	}
 }
+
+// ParseHost extracts only the host: a zero port (in-memory or unix peers)
+// must not make it fail. SplitHostPort still validates ports.
+func TestParseHostZeroPort(t *testing.T) {
+	for in, want := range map[string]string{"0.0.0.0:0": "0.0.0.0", "[::1]:0": "::1"} {
+		if a, err := ParseHost(in); err != nil || a != A(want) {
+			t.Error(in, a, err)
+		}
+	}
+}

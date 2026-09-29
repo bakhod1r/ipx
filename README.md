@@ -30,7 +30,9 @@ go install github.com/bakhod1r/ipx/cmd/ipx@latest
 | Hierarchy | `FindOverlaps`, `BuildTree` |
 | Batch | `IPSet.ContainsBatch`, `Table.LookupBatch`, `ParseAddrs`, `ParsePrefixes` |
 | Kubernetes (`ipx/k8s`) | `Networks.Validate` (pod/service/node overlap), `NodeCIDRs`, `MaxNodes`, `ServiceIP`, `APIServerIP`, `DNSServiceIP` |
-| HTTP (`ipx/httpip`) | trusted-proxy client IP, context middleware, ACL `Restrict` |
+| HTTP (`ipx/httpip`) | trusted-proxy client IP, context middleware, ACL `Restrict`, transport-agnostic `Resolve` |
+| SQL (`ipx/sqlip`) | `database/sql` Scanner/Valuer: `Addr`, `Prefix` (Postgres `inet`/`cidr`, text), `BinaryAddr` (MySQL `VARBINARY(16)`) |
+| Cloud ranges (`ipx/cloud`) | fetch AWS / Google Cloud / Cloudflare published ranges; `Index.Lookup` → provider, region, service |
 
 ## Examples
 
@@ -72,9 +74,16 @@ vs [`go4.org/netipx`](https://pkg.go.dev/go4.org/netipx) (Apple M-series, `cd be
 - IPv4 `/31` and `/32` follow RFC 3021 (all addresses usable).
 - 100% statement coverage, enforced in CI.
 
-## Not included (by design)
+## Integrations (separate modules)
 
-Framework middleware (Gin/Echo/Fiber) and PostgreSQL/MySQL scanners pull in dependencies; they belong in separate modules.
+Kept out of the core module so `go get github.com/bakhod1r/ipx` stays dependency-free.
+
+| Module | Purpose |
+|---|---|
+| `github.com/bakhod1r/ipx/integrations/ginipx` | Gin: `ClientIP`, `Restrict`, `FromContext` |
+| `github.com/bakhod1r/ipx/integrations/echoipx` | Echo v4: same API |
+| `github.com/bakhod1r/ipx/integrations/fiberipx` | Fiber v3 (fasthttp): same API |
+| `github.com/bakhod1r/ipx/integrations/geoip` | MaxMind MMDB: `Country`, `ASN`, generic `Lookup` (databases not bundled — GeoLite2 has its own license) |
 
 ## License
 

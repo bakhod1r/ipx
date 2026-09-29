@@ -39,3 +39,30 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.13
+  integrations:
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [integrations/ginipx, integrations/echoipx, integrations/fiberipx, integrations/geoip]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - run: go vet ./...
+      - run: go test -race -coverprofile=cover.out ./...
+      - name: coverage must stay 100%
+        run: |
+          total=$(go tool cover -func=cover.out | awk '/^total:/ {print $3}')
+          echo "coverage: $total"
+          [ "$total" = "100.0%" ]
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13
+          working-directory: ${{ matrix.module }}
+          args: --config ${{ github.workspace }}/.golangci.yml

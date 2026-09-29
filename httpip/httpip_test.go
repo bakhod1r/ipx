@@ -69,3 +69,17 @@ func TestRestrict(t *testing.T) {
 		}
 	}
 }
+
+func TestResolve(t *testing.T) {
+	res := New(netip.MustParsePrefix("10.0.0.0/8"))
+	got, err := res.Resolve("10.0.0.2:80", []string{"6.6.6.6, 198.51.100.7", "10.0.0.3"}, "")
+	if err != nil || got != netip.MustParseAddr("198.51.100.7") {
+		t.Error(got, err)
+	}
+	if got, _ := res.Resolve("10.0.0.2:80", nil, "198.51.100.8"); got != netip.MustParseAddr("198.51.100.8") {
+		t.Error(got)
+	}
+	if got, _ := res.Resolve("10.0.0.2", nil, ""); got != netip.MustParseAddr("10.0.0.2") {
+		t.Error("bare IP peer", got)
+	}
+}
